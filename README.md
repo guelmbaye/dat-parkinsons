@@ -84,6 +84,23 @@ d'une iteration a l'autre, pas la log loss brute qui est optimiste.
 
 ## 2. Commandes
 
+### Installation
+
+```bash
+pip install -r requirements.txt              # socle CPU : soumission complete sans GPU
+pip install -r requirements-cnn-cpu.txt      # + torch CPU, pour l'auto-test
+pip install -r requirements-colab.txt        # Colab : ne PAS reinstaller torch
+python tools/check_env.py                    # verifie l'alignement au conteneur
+```
+
+Les versions epinglees viennent du `uv.lock` du depot runtime officiel. Elles
+comptent pour les paquets dont un artefact traverse la frontiere : le pipeline
+scikit-learn voyage en pickle, l'architecture timm doit etre reconstructible
+cote conteneur, et les `state_dict` sont charges par torch. `check_env.py`
+classe chaque ecart par gravite et sort en code 1 si un ecart est bloquant.
+
+### Pipeline
+
 ```bash
 # 0. auto-test du code reseau (30 s, a faire AVANT tout entrainement long)
 python tools/selftest_cnn.py
@@ -95,8 +112,10 @@ python scripts/01_preprocess.py --data data --out cache --workers 24
 python scripts/02_train_tab.py --cache cache --out models/tab
 
 # 3. reseaux (regler --epochs d'apres curve.csv)
+# Sur un petit jeu (< ~2000 examens), reduire les largeurs : 3,7 M de
+# parametres pour 1500 exemples surapprend, 1,4 M passe beaucoup mieux.
 python scripts/03_train_cnn.py --cache cache --out models/resnet3d \
-    --model resnet3d --epochs 60 --batch-size 16
+    --model resnet3d --epochs 60 --batch-size 16 --widths 16,32,64,96
 python scripts/03_train_cnn.py --cache cache --out models/proj2d \
     --model proj2d --backbone convnext_tiny --epochs 30 --batch-size 32 --lr 1e-4
 
@@ -174,6 +193,7 @@ solutions gagnantes.
 | `main.py` | simulation complete du conteneur, sortie au format exact |
 | `models_cnn.py` | **ecrit mais non execute** — lancer `tools/selftest_cnn.py` en premier |
 | notebook Colab | JSON et cellules Python valides ; non execute sur Colab |
+| `check_env.py` | execute ; detecte correctement absences et divergences |
 
 Les scores obtenus sur fantomes (log loss ~0,04) ne disent **rien** de la
 performance reelle : les fantomes sont separables par construction. Ils

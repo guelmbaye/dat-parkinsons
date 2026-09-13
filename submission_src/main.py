@@ -76,7 +76,8 @@ def run_preprocessing(uids: list[str], workers: int):
                 el = time.time() - t0
                 log(f"  pretraitement {n}/{len(uids)} "
                     f"({el / n:.2f}s/examen, reste ~{el / n * (len(uids) - n):.0f}s)")
-    log(f"pretraitement termine en {time.time() - t0:.0f}s, {n_fail} echec(s)")
+    log(f"pretraitement termine en {time.time() - t0:.0f}s"
+        f"{' — ATTENTION : des fichiers ont echoue' if n_fail else ''}")
     return vols, pd.DataFrame(feats), n_fail
 
 
@@ -226,9 +227,11 @@ def main() -> None:
 
     sub["is_pathologic"] = combine(preds, len(uids))
     sub[["uid", "is_pathologic"]].to_csv(OUT_PATH, index=False)
-    p = sub["is_pathologic"].to_numpy()
+    # NE JAMAIS journaliser de statistique derivee des predictions ou des
+    # images de test (moyenne, min, max, distribution...). Le reglement
+    # l'interdit explicitement et en fait un motif de disqualification. Seuls
+    # l'avancement et les diagnostics du code sont autorises.
     log(f"submission.csv ecrit : {len(sub)} lignes | "
-        f"moyenne {p.mean():.3f} | min {p.min():.4f} | max {p.max():.4f} | "
         f"modeles utilises : {sorted(preds) or 'aucun'}")
 
 

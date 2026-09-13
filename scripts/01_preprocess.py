@@ -58,7 +58,13 @@ def main():
     print(f"{len(items)} examens, {args.workers} processus")
 
     shape = crop_shape()
-    vols = np.zeros((len(items),) + shape, dtype=np.float16)
+    # Tableau memoire-mappe : les volumes sont ecrits directement sur disque au
+    # lieu de s'accumuler en RAM. Indispensable sur une petite machine — 3000
+    # examens representent ~1 Go, ce qui suffit a faire tuer le processus.
+    out_npy = out / "volumes.npy"
+    vols = np.lib.format.open_memmap(out_npy, mode="w+", dtype=np.float16,
+                                     shape=(len(items),) + shape)
+    print(f"volumes.npy pre-alloue : {vols.nbytes / 1e6:.0f} Mo sur disque")
     rows = [None] * len(items)
     order = {uid: i for i, (uid, _) in enumerate(items)}
 
@@ -81,12 +87,12 @@ def main():
         man = man.merge(lab[["uid", "is_pathologic"]], on="uid", how="left")
     man["pseudo_center"] = acquisition_signature(man).to_numpy()
 
-    np.save(out / "volumes.npy", vols)
+    vols.flush()
     man.to_csv(out / "manifest.csv", index=False)
 
     print(f"\ncache ecrit dans {out}")
     print(f"  volumes.npy   {vols.shape} float16  "
-          f"({vols.nbytes / 1e6:.0f} Mo)")
+          f"({out_npy.stat().st_size / 1e6:.0f} Mo)")
     print(f"  manifest.csv  {man.shape[0]} lignes x {man.shape[1]} colonnes")
     bad = man[~man["ok"].astype(bool)]
     if len(bad):

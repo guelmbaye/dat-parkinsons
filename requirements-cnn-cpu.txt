@@ -1,0 +1,15 @@
+# Torch CPU, pour faire tourner tools/selftest_cnn.py sans GPU.
+#
+#   pip install -r requirements-cnn-cpu.txt
+#
+# NE PAS remplacer par un simple "pip install torch" : le wheel PyPI par
+# defaut tire environ 3 Go de bibliotheques CUDA totalement inutiles sur une
+# machine sans GPU, et sature un petit disque.
+#
+# Le suffixe +cpu n'existe QUE sur l'index PyTorch : pip ne peut donc pas
+# retomber silencieusement sur la variante CUDA de PyPI. Si la resolution
+# echoue (version absente de l'index), remplacer par "torch" tout court et
+# passer --index-url au lieu de --extra-index-url.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.12.1+cpu
+timm==1.0.27

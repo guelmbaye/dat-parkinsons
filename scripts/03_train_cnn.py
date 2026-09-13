@@ -57,8 +57,12 @@ def evaluate(model, vols, idx, device, bs, amp, tta=True) -> np.ndarray:
 def train_fold(vols, y, tr, va, args, device, amp, log) -> tuple[np.ndarray, dict, list]:
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    kw = {} if args.model == "resnet3d" else \
-        {"backbone": args.backbone, "pretrained": bool(args.pretrained)}
+    if args.model == "resnet3d":
+        kw = {"widths": tuple(int(w) for w in args.widths.split(",")),
+              "drop": args.dropout, "head_drop": args.head_dropout}
+    else:
+        kw = {"backbone": args.backbone, "pretrained": bool(args.pretrained),
+              "head_drop": args.head_dropout}
     model = build_model(args.model, **kw).to(device)
     if args.channels_last and device.type == "cuda":
         model = model.to(memory_format=torch.channels_last_3d)
@@ -137,6 +141,10 @@ def main():
     ap.add_argument("--group-cv", type=int, default=1,
                     help="1 = plis par pseudo-centre (recommande)")
     ap.add_argument("--channels-last", type=int, default=0)
+    ap.add_argument("--widths", default="24,48,96,160",
+                    help="largeurs du ResNet3D ; sur un petit jeu, essayer 16,32,64,96")
+    ap.add_argument("--dropout", type=float, default=0.1)
+    ap.add_argument("--head-dropout", type=float, default=0.3)
     ap.add_argument("--amp", default="auto", choices=["auto", "bf16", "fp16", "off"],
                     help="auto = bf16 si le GPU le supporte, fp16 sinon (T4)")
     ap.add_argument("--resume", type=int, default=1,

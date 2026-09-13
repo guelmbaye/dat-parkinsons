@@ -1,0 +1,23 @@
+# Socle CPU : suffit pour pretraitement, descripteurs, fusion et packaging.
+# C'est tout ce qu'il faut pour produire une soumission valide sans GPU.
+#
+#   pip install -r requirements.txt
+#
+# Les versions EPINGLEES sont celles du uv.lock du conteneur d'evaluation.
+# Elles comptent parce que certains artefacts traversent la frontiere :
+#   - scikit-learn : le pipeline logistique voyage en pickle, et un pickle
+#     produit par une version differente peut refuser de se recharger ;
+#   - timm : l'architecture de proj2d doit etre constructible cote conteneur ;
+#   - nibabel : lecture des NIfTI, autant lire les headers a l'identique.
+# LightGBM est serialise en texte (model_to_string), donc portable entre
+# versions -- on s'aligne quand meme, ca ne coute rien.
+scikit-learn==1.8.0
+lightgbm==4.6.0
+nibabel==5.4.2
+scikit-image==0.26.0
+
+# Socle numerique : pas de contrainte forte, le format .npy est stable et
+# rien de ce qui est produit ici n'en depend a la version pres.
+numpy>=2.1,<3
+scipy>=1.14
+pandas>=2.2

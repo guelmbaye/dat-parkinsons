@@ -1,0 +1,11 @@
+# Colab (ou toute machine GPU ou torch est deja installe).
+#
+#   pip install -r requirements-colab.txt
+#
+# NE PAS installer torch ici : Colab fournit deja une version compilee pour
+# son GPU et son pilote. La reinstaller casse CUDA dans neuf cas sur dix.
+scikit-learn==1.8.0
+lightgbm==4.6.0
+nibabel==5.4.2
+scikit-image==0.26.0
+timm==1.0.27

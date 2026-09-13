@@ -13,6 +13,7 @@ d'entrainement sur un bug d'axe.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -36,16 +37,27 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--batch", type=int, default=0,
+                    help="0 = automatique (2 sur CPU, 8 sur GPU)")
+    ap.add_argument("--skip-proj2d", action="store_true",
+                    help="saute l'encodeur 2D pre-entraine (RAM limitee)")
+    args = ap.parse_args()
+
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     shape = crop_shape()
-    print(f"torch {torch.__version__} | {dev} | volume {shape}\n")
+    # Le gros du cout memoire vient du premier etage, a pleine resolution :
+    # environ 110 Mo d'activations par exemple. Sur une machine a 1 Go libre,
+    # un lot de 8 suffit a declencher l'OOM killer.
+    bs = args.batch or (8 if dev.type == "cuda" else 2)
+    print(f"torch {torch.__version__} | {dev} | volume {shape} | lot {bs}\n")
 
     # -- 1. Mise en forme -----------------------------------------------------
-    v = torch.rand(4, *shape, device=dev) * 6.0
-    check("to_input", tuple(to_input(v).shape) == (4, 1) + shape,
+    v = torch.rand(bs, *shape, device=dev) * 6.0
+    check("to_input", tuple(to_input(v).shape) == (bs, 1) + shape,
           str(tuple(to_input(v).shape)))
     proj = to_projections(v, 224)
-    check("to_projections", tuple(proj.shape) == (4, 3, 224, 224),
+    check("to_projections", tuple(proj.shape) == (bs, 3, 224, 224),
           str(tuple(proj.shape)))
 
     # -- 2. Axes de l'augmentation -------------------------------------------
@@ -82,15 +94,17 @@ def main() -> None:
     check("rotation 90 deg : la barre change d'axe", xe_after > xe_before * 3,
           f"etendue X {xe_before:.0f} -> {xe_after:.0f}")
 
-    aug = augment(bar.repeat(8, 1, 1, 1), AugConfig())
-    check("augment complet : formes conservees", aug.shape == (8,) + shape)
+    aug = augment(bar.repeat(bs, 1, 1, 1), AugConfig())
+    check("augment complet : formes conservees", aug.shape == (bs,) + shape)
     check("augment complet : pas de NaN", bool(torch.isfinite(aug).all()))
     check("augment complet : effet non nul",
           float((aug[0] - bar[0]).abs().max()) > 1e-3)
 
     # -- 3. Passe avant / arriere --------------------------------------------
-    for name, kw in (("resnet3d", {}),
-                     ("proj2d", {"backbone": "convnext_tiny", "pretrained": False})):
+    archs = [("resnet3d", {})]
+    if not args.skip_proj2d:
+        archs.append(("proj2d", {"backbone": "convnext_tiny", "pretrained": False}))
+    for name, kw in archs:
         try:
             model = build_model(name, **kw).to(dev)
             n_par = sum(p.numel() for p in model.parameters()) / 1e6
@@ -100,25 +114,30 @@ def main() -> None:
                   f"{n_par:.1f} M parametres")
             loss = F.binary_cross_entropy_with_logits(
                 out, torch.tensor([0.0, 1.0], device=dev))
+            del model
             loss.backward()
             g = max(float(p.grad.abs().max()) for p in model.parameters()
                     if p.grad is not None)
             check(f"{name} : gradients non nuls et finis",
                   np.isfinite(g) and g > 0, f"|grad| max {g:.2e}")
+            model2 = build_model(name, **kw).to(dev)
             check(f"{name} : TTA symetrique",
-                  tuple(predict_logits(model, x).shape) == (2,))
+                  tuple(predict_logits(model2, x).shape) == (2,))
+            del model2
         except Exception as exc:
             check(f"{name} : construction", False, f"{type(exc).__name__}: {exc}")
 
     # -- 4. Capacite a sur-apprendre un mini-lot -----------------------------
     torch.manual_seed(0)
     model = build_model("resnet3d").to(dev)
-    x = torch.rand(8, *shape, device=dev)
-    y = torch.tensor([0.0, 1.0] * 4, device=dev)
+    n_ov = max(2, bs)
+    x = torch.rand(n_ov, *shape, device=dev)
+    y = torch.tensor([0.0, 1.0] * (n_ov // 2), device=dev)
     x[y > 0.5] += 3.0
     opt = torch.optim.AdamW(model.parameters(), lr=3e-3)
+    n_iter = 40 if dev.type == "cuda" else 25
     first = last = None
-    for it in range(40):
+    for it in range(n_iter):
         loss = F.binary_cross_entropy_with_logits(model(x), y)
         opt.zero_grad(set_to_none=True)
         loss.backward()
