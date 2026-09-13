@@ -18,7 +18,12 @@ import pandas as pd
 from sklearn.metrics import log_loss, roc_auc_score
 from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
 
-SIG_COLS = ["orig_shape_x", "orig_shape_y", "orig_shape_z",
+# Le nombre de COUPES (orig_shape_z) est volontairement exclu : il varie d'un
+# patient a l'autre sur un meme scanner, parce que le champ de vue reconstruit
+# est ajuste a la tete. L'inclure eclate un centre unique en une dizaine de
+# pseudo-groupes, et le meme appareil se retrouve alors des deux cotes du pli —
+# soit precisement ce que la validation groupee doit empecher.
+SIG_COLS = ["orig_shape_x", "orig_shape_y",
             "orig_spacing_x", "orig_spacing_y", "orig_spacing_z"]
 
 
