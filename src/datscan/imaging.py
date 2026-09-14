@@ -155,12 +155,29 @@ def _largest_component(mask: np.ndarray) -> np.ndarray:
     return lab == int(np.argmax(sizes))
 
 
-def background_level(vol: np.ndarray, mask: np.ndarray) -> float:
+def background_level(vol: np.ndarray, mask: np.ndarray,
+                     z_center: float | None = None,
+                     z_half_mm: float = 50.0,
+                     spacing: float = TARGET_SPACING) -> float:
     """Estime le fond non specifique (equivalent VOI occipitale, sans atlas).
 
     Moyenne tronquee p25-p85 des voxels intra-tete : exclut le bord du masque
     (partiel volume, bas) et le striatum (top ~3 %, haut).
+
+    ``z_center`` restreint le calcul a une dalle axiale autour du plan
+    striatal. C'est indispensable sur les acquisitions a grand champ de vue
+    (256 coupes a 2,46 mm = 630 mm, soit trois fois une tete) : le masque y
+    capture le cou et les epaules, dont la faible captation abaisse la
+    reference et gonfle artificiellement tous les ratios.
     """
+    if z_center is not None:
+        half = max(1, int(round(z_half_mm / spacing)))
+        z1 = max(0, int(round(z_center)) - half)
+        z2 = min(vol.shape[2], int(round(z_center)) + half + 1)
+        sub = np.zeros_like(mask)
+        sub[:, :, z1:z2] = mask[:, :, z1:z2]
+        if sub.sum() >= 2000:      # garde-fou : on ne descend jamais trop bas
+            mask = sub
     vals = vol[mask]
     if vals.size < 100:
         vals = vol[vol > 0]
@@ -265,14 +282,18 @@ def preprocess(path, spacing: float = TARGET_SPACING) -> tuple[np.ndarray, ScanQ
             mask = vol > np.percentile(vol, 70.0)
             qc.note = "masque de secours"
 
-        bg = background_level(vol, mask)
+        # z0 est calcule AVANT la normalisation : l'argmax du profil de coupes
+        # est invariant par division par une constante, et il faut connaitre le
+        # plan striatal pour restreindre l'estimation du fond.
+        z0 = striatal_slab_z(vol, mask)
+        qc.slab_z_frac = float(z0 / max(1, vol.shape[2] - 1))
+
+        bg = background_level(vol, mask, z_center=z0, spacing=spacing)
         qc.background = bg
         vol = vol / bg
         qc.peak_ratio = float(np.percentile(vol[mask], 99.9)) if mask.any() else 0.0
 
         half_z = max(1, int(round(10.0 / spacing)))
-        z0 = striatal_slab_z(vol, mask)
-        qc.slab_z_frac = float(z0 / max(1, vol.shape[2] - 1))
         z1, z2 = max(0, z0 - half_z), min(vol.shape[2], z0 + half_z + 1)
 
         # Projection axiale du plan striatal : sert au lacet, a la ligne mediane

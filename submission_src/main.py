@@ -74,10 +74,10 @@ def run_preprocessing(uids: list[str], workers: int):
             n_fail += (not ok)
             if n % 250 == 0:
                 el = time.time() - t0
-                log(f"  pretraitement {n}/{len(uids)} "
-                    f"({el / n:.2f}s/examen, reste ~{el / n * (len(uids) - n):.0f}s)")
-    log(f"pretraitement termine en {time.time() - t0:.0f}s"
-        f"{' — ATTENTION : des fichiers ont echoue' if n_fail else ''}")
+                # Pourcentage et cadence uniquement : jamais de compte absolu.
+                log(f"  pretraitement {100.0 * n / len(uids):.0f}% "
+                    f"({el / n:.2f}s/examen)")
+    log(f"pretraitement termine en {time.time() - t0:.0f}s")
     return vols, pd.DataFrame(feats), n_fail
 
 
@@ -130,7 +130,8 @@ def predict_cnns(vols: np.ndarray) -> dict[str, np.ndarray]:
         # Marge : on n'engage un modele que si le temps restant le permet.
         need = 60.0 + 0.02 * len(vols) * len(folds)
         if remaining() < need:
-            log(f"{d.name} ignore : {remaining():.0f}s restantes < {need:.0f}s requises")
+            # Ne pas journaliser "need" : il derive de la taille du jeu de test.
+            log(f"{d.name} ignore : budget temps insuffisant")
             continue
         try:
             cfg = json.loads((d / "config.json").read_text())
@@ -210,7 +211,7 @@ def combine(preds: dict[str, np.ndarray], n: int) -> np.ndarray:
 def main() -> None:
     sub = pd.read_csv(SUBMISSION_FORMAT)
     uids = sub["uid"].astype(str).tolist()
-    log(f"{len(uids)} examens a predire | budget {BUDGET_S / 60:.0f} min"
+    log(f"demarrage | budget {BUDGET_S / 60:.0f} min"
         f"{' | smoke test' if IS_SMOKE else ''}")
 
     workers = max(1, min(int(os.environ.get("N_WORKERS", 0)) or (os.cpu_count() or 4),
@@ -231,8 +232,7 @@ def main() -> None:
     # images de test (moyenne, min, max, distribution...). Le reglement
     # l'interdit explicitement et en fait un motif de disqualification. Seuls
     # l'avancement et les diagnostics du code sont autorises.
-    log(f"submission.csv ecrit : {len(sub)} lignes | "
-        f"modeles utilises : {sorted(preds) or 'aucun'}")
+    log(f"submission.csv ecrit | modeles utilises : {sorted(preds) or 'aucun'}")
 
 
 if __name__ == "__main__":

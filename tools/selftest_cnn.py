@@ -114,16 +114,16 @@ def main() -> None:
                   f"{n_par:.1f} M parametres")
             loss = F.binary_cross_entropy_with_logits(
                 out, torch.tensor([0.0, 1.0], device=dev))
-            del model
             loss.backward()
             g = max(float(p.grad.abs().max()) for p in model.parameters()
                     if p.grad is not None)
             check(f"{name} : gradients non nuls et finis",
                   np.isfinite(g) and g > 0, f"|grad| max {g:.2e}")
-            model2 = build_model(name, **kw).to(dev)
             check(f"{name} : TTA symetrique",
-                  tuple(predict_logits(model2, x).shape) == (2,))
-            del model2
+                  tuple(predict_logits(model, x).shape) == (2,))
+            del model, out, loss
+            if dev.type == "cuda":
+                torch.cuda.empty_cache()
         except Exception as exc:
             check(f"{name} : construction", False, f"{type(exc).__name__}: {exc}")
 
@@ -142,8 +142,8 @@ def main() -> None:
         opt.zero_grad(set_to_none=True)
         loss.backward()
         opt.step()
-        first = float(loss) if it == 0 else first
-        last = float(loss)
+        last = float(loss.detach())
+        first = last if it == 0 else first
     check("resnet3d sur-apprend un mini-lot", last < 0.5 * first,
           f"{first:.3f} -> {last:.3f}")
 
