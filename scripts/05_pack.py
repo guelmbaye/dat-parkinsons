@@ -90,11 +90,17 @@ def main():
         shutil.copy(src / "config.json", dst / "config.json")
 
     _verify_cnns(stage)
+    # La verification importe des modules depuis le dossier de preparation et
+    # y laisse des __pycache__. Inoffensifs (le tag de version ne correspond
+    # pas a celui du conteneur, Python les ignore), mais on ne livre que ce
+    # qui sert.
+    for cache in stage.rglob("__pycache__"):
+        shutil.rmtree(cache, ignore_errors=True)
 
     zip_path = out / "submission.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
         for fp in sorted(stage.rglob("*")):
-            if fp.is_file():
+            if fp.is_file() and "__pycache__" not in fp.parts:
                 z.write(fp, fp.relative_to(stage))
 
     names = zipfile.ZipFile(zip_path).namelist()
