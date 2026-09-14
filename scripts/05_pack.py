@@ -22,6 +22,37 @@ REPO = Path(__file__).resolve().parents[1]
 KEEP = ["__init__.py", "imaging.py", "features.py", "models_cnn.py", "blend.py"]
 
 
+def _verify_cnns(stage: Path) -> None:
+    """Charge reellement chaque checkpoint dans le modele reconstruit.
+
+    Sans ce controle, une incoherence d'architecture entre entrainement et
+    inference ne se revele que dans le conteneur d'evaluation : main.py
+    degrade en silence sur les modeles restants et sort en code 0. On croit
+    avoir soumis son meilleur modele, et on a soumis l'ancien.
+    """
+    root = stage / "assets" / "cnn"
+    if not root.is_dir():
+        return
+    sys.path.insert(0, str(stage))
+    try:
+        import torch
+        from datscan.models_cnn import build_model
+        from main import _model_kwargs
+    except Exception as exc:
+        print(f"  VERIFICATION IMPOSSIBLE ({type(exc).__name__}) — "
+              f"empaqueter sur une machine avec torch")
+        return
+    for d in sorted(x for x in root.iterdir() if x.is_dir()):
+        cfg = json.loads((d / "config.json").read_text())
+        for fp in sorted(d.glob("fold*.pt")):
+            state = torch.load(fp, map_location="cpu")
+            model = build_model(cfg.get("model", "resnet3d"),
+                                **_model_kwargs(cfg, state))
+            model.load_state_dict(state)          # leve si incoherent
+        print(f"  verifie : {d.name} ({len(list(d.glob('fold*.pt')))} plis "
+              f"se chargent)")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tab", default=None, help="dossier des modeles tabulaires")
@@ -57,6 +88,8 @@ def main():
         for fp in sorted(src.glob("fold*.pt")):
             shutil.copy(fp, dst / fp.name)
         shutil.copy(src / "config.json", dst / "config.json")
+
+    _verify_cnns(stage)
 
     zip_path = out / "submission.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:

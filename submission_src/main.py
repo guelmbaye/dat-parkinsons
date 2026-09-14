@@ -107,6 +107,26 @@ def predict_tabular(X: pd.DataFrame) -> dict[str, np.ndarray]:
     return preds
 
 
+def _model_kwargs(cfg: dict, state: dict) -> dict:
+    """Arguments de construction, deduits EN PRIORITE du checkpoint lui-meme.
+
+    Se fier a config.json seul est fragile : toute option d'architecture
+    ajoutee cote entrainement et oubliee ici produit un modele de la mauvaise
+    taille, et le chargement echoue a l'execution dans le conteneur. Les formes
+    du state_dict, elles, sont toujours exactes.
+    """
+    if cfg.get("model", "resnet3d") != "resnet3d":
+        return {"backbone": cfg.get("backbone", "convnext_tiny"), "pretrained": False}
+    widths = []
+    i = 0
+    while f"stages.{2 * i}.c1.weight" in state:
+        widths.append(int(state[f"stages.{2 * i}.c1.weight"].shape[0]))
+        i += 1
+    if not widths:  # filet de securite : on retombe sur la configuration
+        widths = [int(w) for w in str(cfg.get("widths", "24,48,96,160")).split(",")]
+    return {"widths": tuple(widths)}
+
+
 def predict_cnns(vols: np.ndarray) -> dict[str, np.ndarray]:
     preds: dict[str, np.ndarray] = {}
     cnn_root = ASSETS / "cnn"
@@ -135,12 +155,12 @@ def predict_cnns(vols: np.ndarray) -> dict[str, np.ndarray]:
             continue
         try:
             cfg = json.loads((d / "config.json").read_text())
-            kw = {} if cfg.get("model") == "resnet3d" else \
-                {"backbone": cfg.get("backbone", "convnext_tiny"), "pretrained": False}
             acc, t0 = [], time.time()
             for fp in folds:
+                state = torch.load(fp, map_location=device)
+                kw = _model_kwargs(cfg, state)
                 model = build_model(cfg.get("model", "resnet3d"), **kw).to(device)
-                model.load_state_dict(torch.load(fp, map_location=device))
+                model.load_state_dict(state)
                 model.eval()
                 bs = int(cfg.get("eval_batch_size", 32))
                 z = np.zeros(len(vols), dtype=np.float64)
